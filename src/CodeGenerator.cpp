@@ -31,35 +31,12 @@ void CodeGenerator::encodeInstructions()
 		}
 		else if (instruction.token.type == TokenType::LOCAL_LABEL_DECLARATION) 
 		{
-			if (const auto& it = labelsToPatch.find(currentLabel + instruction.token.stringValue); it != labelsToPatch.end())
-			{
-				output.seekp(it->second.outputAddress - startAddress);
-				streamNumber(address - it->second.relativeTo, it->second.size);
-				output.seekp(0, output.end);
-				labelsToPatch.erase(it);
-			}
+			patchLabel(currentLabel + instruction.token.stringValue);
 			labels.insert({ currentLabel + instruction.token.stringValue, { LabelType::ADDRESS_LABEL, address } });
 		}
-		else if (instruction.token.type == TokenType::GLOBAL_LABEL_DECLARATION)
+		else if (instruction.token.type == TokenType::GLOBAL_LABEL_DECLARATION || instruction.token.type == TokenType::DATA_LABEL_DECLARATION)
 		{
-			if (const auto& it = labelsToPatch.find(instruction.token.stringValue); it != labelsToPatch.end())
-			{
-				output.seekp(it->second.outputAddress - startAddress);
-				streamNumber(address - it->second.relativeTo, it->second.size);
-				output.seekp(0, output.end);
-				labelsToPatch.erase(it);
-			}
-			labels.insert({ instruction.token.stringValue, { LabelType::ADDRESS_LABEL, address } });
-		}
-		else if (instruction.token.type == TokenType::DATA_LABEL_DECLARATION)
-		{ 
-			if (const auto& it = labelsToPatch.find(instruction.token.stringValue); it != labelsToPatch.end())
-			{
-				output.seekp(it->second.outputAddress - startAddress);
-				streamNumber(address - it->second.relativeTo, it->second.size);
-				output.seekp(0, output.end);
-				labelsToPatch.erase(it);
-			}
+			patchLabel(instruction.token.stringValue);
 			labels.insert({ instruction.token.stringValue, { LabelType::ADDRESS_LABEL, address } });
 		}
 	}
@@ -325,6 +302,19 @@ void CodeGenerator::resolveGetaddressOperators(Node *node)
 	resolveGetaddressOperators(node->right.get());
 }
 
+void CodeGenerator::patchLabel(const std::string& label)
+{
+	auto range = labelsToPatch.equal_range(label);
+	std::multimap<std::string, LabelToPatch>::iterator it = range.first;
+	while (it != range.second)
+	{
+		output.seekp(it->second.outputAddress - startAddress);
+		streamNumber(address - it->second.relativeTo, it->second.size);
+		output.seekp(0, output.end);
+		it = labelsToPatch.erase(it);
+	}
+}
+
 Node* CodeGenerator::findNumber(Node* node)
 {
 	if (!node || node->token.type == TokenType::NUMBER)
@@ -517,7 +507,7 @@ void CodeGenerator::GPRAndNumberInstruction(const Instruction& instruction)
 
 void CodeGenerator::GPRAndOffsetInstruction(const Instruction& instruction, const std::string& label)
 {
-	uint8_t offsetSize = 1;
+	uint8_t offsetSize = 2;
 	if (const auto [opcode, _] = getInstructionOpcode(instruction.token.stringValue, instruction.arguments.at(0).token.stringValue, "I", (uint8_t*)&instruction.arguments.at(0).token.size, &offsetSize, false, false); opcode != -1)
 	{
 		output << (uint8_t)opcode;
@@ -578,7 +568,7 @@ void CodeGenerator::MemoryAddressingAndRegisterInstruction(const Instruction& in
 
 		address += 1;
 
-		AddresingMode addresingMode = { memoryAddressing.addressingMode.mod, memoryAddressing.addressingMode.rm, instruction.arguments.at(1).token.numberValue };
+		AddresingMode addresingMode = { memoryAddressing.addressingMode.mod, instruction.arguments.at(1).token.numberValue, memoryAddressing.addressingMode.rm };
 
 		output << addresingMode.to_uint8t();
 
@@ -632,7 +622,7 @@ void CodeGenerator::MemoryAddressingAndNumberInstruction(const Instruction& inst
 
 void CodeGenerator::RegisterAndLabelInstruction(const Instruction& instruction, const std::string& operandA, const std::string& operandB, const std::string& label)
 {
-	uint8_t offsetSize = 1;
+	uint8_t offsetSize = 0;
 	if (const auto [opcode, _] = getInstructionOpcode(instruction.token.stringValue, "G", "M", (uint8_t*)&instruction.arguments.at(0).token.size, &offsetSize, true, false); opcode != -1)
 	{
 		output << (uint8_t)opcode;
@@ -645,16 +635,16 @@ void CodeGenerator::RegisterAndLabelInstruction(const Instruction& instruction, 
 		
 		address += 1;
 
-		address += offsetSize;
+		address += 2;
 
 		if (const auto& it = labels.find(label); it != labels.end())
 		{
-			streamNumber(it->second.address - address, offsetSize);
+			streamNumber(it->second.address - address, 2);
 		}
 		else
 		{
-			streamNumber(0, offsetSize);
-			labelsToPatch.insert({ label, { (uint16_t)(address - offsetSize), 0, offsetSize } });
+			streamNumber(0, 2);
+			labelsToPatch.insert({ label, { (uint16_t)(address - 2), 0, 2 } });
 		}
 	}
 	else
@@ -665,29 +655,29 @@ void CodeGenerator::RegisterAndLabelInstruction(const Instruction& instruction, 
 
 void CodeGenerator::LabelAndRegisterInstruction(const Instruction& instruction, const std::string& operandA, const std::string& operandB, const std::string& label)
 {
-	uint8_t offsetSize = 1;
+	uint8_t offsetSize = 0;
 	if (const auto [opcode, _] = getInstructionOpcode(instruction.token.stringValue, "M", "G", &offsetSize, (uint8_t*)&instruction.arguments.at(1).token.size, false, true); opcode != -1)
 	{
 		output << (uint8_t)opcode;
 
 		address += 1;
 
-		AddresingMode addresingMode = { 0b00, 0b110, instruction.arguments.at(1).token.numberValue };
+		AddresingMode addresingMode = { 0b00, instruction.arguments.at(1).token.numberValue, 0b110 };
 
 		output << addresingMode.to_uint8t();
 
 		address += 1;
 
-		address += offsetSize;
+		address += 2;
 
 		if (const auto& it = labels.find(label); it != labels.end())
 		{
-			streamNumber(it->second.address - address, offsetSize);
+			streamNumber(it->second.address - address, 2);
 		}
 		else
 		{
-			streamNumber(0, offsetSize);
-			labelsToPatch.insert({ label, { (uint16_t)(address - offsetSize), 0, offsetSize } });
+			streamNumber(0, 2);
+			labelsToPatch.insert({ label, { (uint16_t)(address - 2), 0, 2 } });
 		}
 	}
 	else
@@ -698,7 +688,7 @@ void CodeGenerator::LabelAndRegisterInstruction(const Instruction& instruction, 
 
 void CodeGenerator::LabelAndNumberInstruction(const Instruction& instruction, const std::string& label)
 {
-	uint8_t offsetSize = 1;
+	uint8_t offsetSize = 0;
 	if (const auto [opcode, extension] = getInstructionOpcode(instruction.token.stringValue, "M", "I", &offsetSize, (uint8_t*)&instruction.arguments.at(1).token.size, false, false); opcode != -1)
 	{
 		output << (uint8_t)opcode;
@@ -711,23 +701,22 @@ void CodeGenerator::LabelAndNumberInstruction(const Instruction& instruction, co
 		{
 			addresingMode.reg = extension;
 			addresingMode.rm = 0b110;
-			offsetSize = 2;
 		}
 
 		output << addresingMode.to_uint8t();
 
 		address += 1;
 
-		address += offsetSize;
+		address += 2;
 
 		if (const auto& it = labels.find(label); it != labels.end())
 		{
-			streamNumber(it->second.address - address, offsetSize);
+			streamNumber(it->second.address - address, 2);
 		}
 		else
 		{
-			streamNumber(0, offsetSize);
-			labelsToPatch.insert({ label, { (uint16_t)(address - offsetSize), 0, offsetSize } });
+			streamNumber(0, 2);
+			labelsToPatch.insert({ label, { (uint16_t)(address - 2), 0, 2 } });
 		}
 
 		streamNumber(instruction.arguments.at(1).token.numberValue, instruction.arguments.at(1).token.size);
@@ -742,8 +731,8 @@ void CodeGenerator::LabelAndNumberInstruction(const Instruction& instruction, co
 
 void CodeGenerator::LabelAndOffsetInstruction(const Instruction& instruction, const std::string& label, const std::string& secondLabel)
 {
-	uint8_t offsetSize = 1;
-	uint8_t secondOffsetSize = 1;
+	uint8_t offsetSize = 0;
+	uint8_t secondOffsetSize = 2;
 	if (const auto [opcode, extension] = getInstructionOpcode(instruction.token.stringValue, "M", "I", &offsetSize, &secondOffsetSize, false, false); opcode != -1)
 	{
 		output << (uint8_t)opcode;
@@ -763,16 +752,16 @@ void CodeGenerator::LabelAndOffsetInstruction(const Instruction& instruction, co
 
 		address += 1;
 
-		address += offsetSize;
+		address += 2;
 
 		if (const auto& it = labels.find(label); it != labels.end())
 		{
-			streamNumber(it->second.address - address, offsetSize);
+			streamNumber(it->second.address - address, 2);
 		}
 		else
 		{
-			streamNumber(0, offsetSize);
-			labelsToPatch.insert({ label, { (uint16_t)(address - offsetSize), 0, offsetSize } });
+			streamNumber(0, 2);
+			labelsToPatch.insert({ label, { (uint16_t)(address - 2), 0, 2 } });
 		}
 
 		address += secondOffsetSize;
@@ -862,7 +851,6 @@ MemoryAddresing CodeGenerator::resolveMemoryAddressing(Node* node)
 }
 
 void CodeGenerator::streamNumber(int64_t number, uint16_t size){
-
 	for (int i = 0; i < size; i++) 
 	{
 		output << (uint8_t)((number >> (8 * i)) & 0xFF);

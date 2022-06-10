@@ -59,7 +59,7 @@ class CodeGenerator
 
 		std::map<std::string, Label> labels = { {"", {} } };
 
-		std::map<std::string, LabelToPatch> labelsToPatch = {};
+		std::multimap<std::string, LabelToPatch> labelsToPatch = {};
 
 		std::string currentLabel = "";
 
@@ -68,6 +68,7 @@ class CodeGenerator
 		void encodeInstruction(const Instruction& instruction);
 
 		void resolveGetaddressOperators(Node *node);
+		void patchLabel(const std::string& label);
 		Node* findNumber(Node* node);
 
 		void orgInstruction(const Instruction& instruction);

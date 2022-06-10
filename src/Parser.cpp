@@ -527,7 +527,7 @@ Node Parser::performArithmeticOperations(Node node, bool registersAsNumbers)
 	{
 		return node;
 	}
-	return performArithmeticOperation(Node{ token, std::make_shared<Node>(performArithmeticOperations(*left, registersAsNumbers)), std::make_shared<Node>(performArithmeticOperations(*right, registersAsNumbers)) });
+	return performArithmeticOperation(Node{ token, std::make_shared<Node>(performArithmeticOperations(*left, registersAsNumbers)), std::make_shared<Node>(performArithmeticOperations(*right, registersAsNumbers)) }, registersAsNumbers);
 }
 
 Node Parser::performArithmeticOperation(Node node, bool registersAsNumbers)
@@ -538,7 +538,7 @@ Node Parser::performArithmeticOperation(Node node, bool registersAsNumbers)
 
 	int64_t result = 0;
 
-	if ((left->token.type != TokenType::NONE && left->token.type != TokenType::NUMBER && !(registersAsNumbers && left->token.type != TokenType::REGISTER)) || (right->token.type != TokenType::NONE && right->token.type != TokenType::NUMBER && !(registersAsNumbers && right->token.type != TokenType::REGISTER)))
+	if ((left->token.type != TokenType::NONE && left->token.type != TokenType::NUMBER && !(registersAsNumbers && left->token.type == TokenType::REGISTER)) || (right->token.type != TokenType::NONE && right->token.type != TokenType::NUMBER && !(registersAsNumbers && right->token.type == TokenType::REGISTER)))
 	{
 		return node;
 	}

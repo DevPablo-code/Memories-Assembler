@@ -37,13 +37,13 @@ int main(int argc, char **argv)
 	std::cout << "Got " << tokens.size() - 1 << " tokens" << '\n';
 
 	Parser parser(tokens);
-	std::vector<Instruction>& instructions = parser.parse();
+	std::vector<Instruction>& parsedInstructions = parser.parse();
 
-	std::cout << "Got " << instructions.size() << " instructions" << '\n';
+	std::cout << "Got " << parsedInstructions.size() << " instructions" << '\n';
 
-	CodeGenerator codeGenerator(instructions);
+	CodeGenerator codeGenerator(parsedInstructions);
 
-	std::ofstream outputFile(path.replace_extension("bin"));
+	std::ofstream outputFile(path.replace_extension("bin"), std::ios::binary);
 
 	if (!outputFile.is_open())
 	{
